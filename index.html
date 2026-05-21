@@ -24,103 +24,96 @@
                 <i class="ph-fill ph-student"></i>
                 <h1>Attendance Portal</h1>
             </div>
-            <button id="settings-btn" class="icon-btn" aria-label="Configure Google Form">
-                <i class="ph ph-gear-six"></i>
-            </button>
+            <div class="header-actions">
+                <button id="open-add-student-btn" class="btn btn-outline" aria-label="Add Student">
+                    <i class="ph ph-user-plus"></i> <span class="hide-mobile">Add Student</span>
+                </button>
+                <button id="settings-btn" class="icon-btn" aria-label="Configure Google Form">
+                    <i class="ph ph-gear-six"></i>
+                </button>
+            </div>
         </div>
     </header>
 
     <main class="container">
-        <!-- Add Student Card -->
-        <section class="card">
-            <div class="card-header">
-                <i class="ph ph-user-plus"></i>
-                <h2>Add Student</h2>
+        
+        <div class="page-header">
+            <div>
+                <h2 class="page-title">Today's Attendance</h2>
+                <p class="page-desc" id="current-date-display">Loading date...</p>
             </div>
-            <p class="card-desc">Register a new student to the database.</p>
+        </div>
+
+        <!-- Dynamic Container for Batch Cards -->
+        <div id="batches-container" class="batches-grid">
+            <!-- Batches will be injected here via JavaScript -->
+        </div>
+
+        <!-- Final Submit Section -->
+        <div class="final-submit-area">
+            <div class="final-submit-content">
+                <div class="final-info">
+                    <h3>Done for the day?</h3>
+                    <p>Mark all remaining unlocked students as <strong>Absent (A)</strong> and submit.</p>
+                </div>
+                <button id="final-submit-btn" class="btn btn-primary btn-large">
+                    <i class="ph ph-paper-plane-right"></i> Final Submit
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Add Student Modal -->
+    <div id="add-student-modal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <i class="ph-fill ph-user-plus"></i>
+                    <h2>Add New Student</h2>
+                </div>
+                <button class="icon-btn close-modal" aria-label="Close modal">
+                    <i class="ph ph-x"></i>
+                </button>
+            </div>
+            <p class="modal-desc">Register a student to a specific batch.</p>
             
             <form id="add-student-form">
                 <div class="input-group">
                     <label for="new-student-name">Full Name</label>
                     <div class="input-wrapper">
                         <i class="ph ph-user"></i>
-                        <input type="text" id="new-student-name" placeholder="e.g. Vivek" required autocomplete="off">
+                        <input type="text" id="new-student-name" placeholder="e.g. John Doe" required autocomplete="off">
                     </div>
                 </div>
 
                 <div class="input-group">
-                    <label for="new-batch">Batch</label>
+                    <label for="new-batch">Batch Timing</label>
                     <div class="input-wrapper">
-                        <i class="ph ph-books"></i>
-                        <input type="text" id="new-batch" placeholder="e.g. 2024-A" required autocomplete="off">
-                    </div>
-                </div>
-
-                <button type="submit" class="btn btn-primary">
-                    <i class="ph ph-plus-circle"></i> Add Student
-                </button>
-            </form>
-        </section>
-
-        <!-- Mark Attendance Card -->
-        <section class="card">
-            <div class="card-header">
-                <i class="ph ph-calendar-check"></i>
-                <h2>Mark Attendance</h2>
-            </div>
-            <p class="card-desc">Record daily attendance and sync to Google Form.</p>
-
-            <form id="attendance-form">
-                <div class="input-group">
-                    <label for="student-select">Select Student</label>
-                    <div class="input-wrapper">
-                        <i class="ph ph-users"></i>
-                        <select id="student-select" required>
-                            <option value="" disabled selected>-- Choose a student --</option>
-                            <!-- Options injected via JS -->
+                        <i class="ph ph-clock"></i>
+                        <select id="new-batch" required>
+                            <option value="" disabled selected>-- Select Batch --</option>
+                            <option value="9:00 AM">9:00 AM</option>
+                            <option value="10:00 AM">10:00 AM</option>
+                            <option value="11:00 AM">11:00 AM</option>
+                            <option value="12:00 PM">12:00 PM</option>
+                            <option value="1:00 PM">1:00 PM</option>
+                            <option value="2:00 PM">2:00 PM</option>
+                            <option value="3:00 PM">3:00 PM</option>
+                            <option value="4:00 PM">4:00 PM</option>
+                            <option value="5:00 PM">5:00 PM</option>
+                            <option value="6:00 PM">6:00 PM</option>
+                            <option value="7:00 PM">7:00 PM</option>
                         </select>
                     </div>
                 </div>
 
-                <div class="input-group">
-                    <label for="student-batch">Batch</label>
-                    <div class="input-wrapper disabled-wrapper">
-                        <i class="ph ph-tag"></i>
-                        <input type="text" id="student-batch" placeholder="Auto-filled batch" readonly>
-                    </div>
-                </div>
-
-                <div class="input-group">
-                    <label>Attendance Status</label>
-                    <div class="status-options">
-                        <input type="radio" id="status-p" name="attendance-status" value="P" required>
-                        <label for="status-p" class="status-btn p-btn">
-                            <span class="status-letter">P</span> Present
-                        </label>
-
-                        <input type="radio" id="status-a" name="attendance-status" value="A">
-                        <label for="status-a" class="status-btn a-btn">
-                            <span class="status-letter">A</span> Absent
-                        </label>
-
-                        <input type="radio" id="status-o" name="attendance-status" value="O">
-                        <label for="status-o" class="status-btn o-btn">
-                            <span class="status-letter">O</span> Off
-                        </label>
-
-                        <input type="radio" id="status-h" name="attendance-status" value="H">
-                        <label for="status-h" class="status-btn h-btn">
-                            <span class="status-letter">H</span> Holiday
-                        </label>
-                    </div>
-                </div>
-
-                <button type="submit" class="btn btn-success">
-                    <i class="ph ph-paper-plane-tilt"></i> Mark Attendance
+                <button type="submit" class="btn btn-primary">
+                    <i class="ph ph-plus-circle"></i> Save Student
                 </button>
             </form>
-        </section>
-    </main>
+        </div>
+    </div>
 
     <!-- Google Form Settings Modal -->
     <div id="settings-modal" class="modal-overlay">
@@ -130,7 +123,7 @@
                     <i class="ph-fill ph-google-logo"></i>
                     <h2>Configure Form Integration</h2>
                 </div>
-                <button id="close-modal-btn" class="icon-btn" aria-label="Close modal">
+                <button class="icon-btn close-modal" aria-label="Close modal">
                     <i class="ph ph-x"></i>
                 </button>
             </div>
@@ -173,6 +166,27 @@
                     <i class="ph ph-floppy-disk"></i> Save Configuration
                 </button>
             </form>
+        </div>
+    </div>
+
+    <!-- Complete Course Confirmation Modal -->
+    <div id="confirm-complete-modal" class="modal-overlay">
+        <div class="modal-card modal-sm">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <i class="ph-fill ph-warning-circle" style="color: var(--warning);"></i>
+                    <h2>Complete Course</h2>
+                </div>
+                <button class="icon-btn close-modal" aria-label="Close modal">
+                    <i class="ph ph-x"></i>
+                </button>
+            </div>
+            <p class="modal-desc">Are you sure? This student has completed the course. All their saved data and attendance records will be permanently removed.</p>
+            
+            <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                <button class="btn btn-outline close-modal" style="flex: 1;">Cancel</button>
+                <button id="confirm-complete-btn" class="btn btn-danger" style="flex: 1;">Yes, Complete</button>
+            </div>
         </div>
     </div>
 
