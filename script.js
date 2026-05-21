@@ -4,36 +4,142 @@ document.addEventListener('DOMContentLoaded', () => {
     const batchesContainer = document.getElementById('batches-container');
     const currentDateDisplay = document.getElementById('current-date-display');
     const toastContainer = document.getElementById('toast-container');
-    
     const finalSubmitBtn = document.getElementById('final-submit-btn');
 
-    // Modals
+    // Modals & Forms
     const addStudentModal = document.getElementById('add-student-modal');
     const settingsModal = document.getElementById('settings-modal');
     const confirmCompleteModal = document.getElementById('confirm-complete-modal');
     const confirmCompleteBtn = document.getElementById('confirm-complete-btn');
     
-    // Forms
     const addStudentForm = document.getElementById('add-student-form');
     const configForm = document.getElementById('config-form');
+
+    // Settings Inputs
+    const remindersToggle = document.getElementById('config-reminders');
 
     // --- State Management ---
     let students = JSON.parse(localStorage.getItem('students')) || [];
     let attendanceRecords = JSON.parse(localStorage.getItem('attendance')) || [];
     let googleFormConfig = JSON.parse(localStorage.getItem('googleFormConfig')) || null;
-    let studentIdToDelete = null; // Temp holder for complete action
-
-    // Daily Reset Key (YYYY-MM-DD)
+    let appSettings = JSON.parse(localStorage.getItem('appSettings')) || { remindersEnabled: true };
+    
+    let studentIdToDelete = null; 
     const todayStr = new Date().toLocaleDateString('en-CA');
+
+    // Notification Log (resets automatically for the new day)
+    let notificationLog = JSON.parse(localStorage.getItem('notificationLog')) || { date: todayStr, notifiedBatches: [] };
+    if (notificationLog.date !== todayStr) {
+        notificationLog = { date: todayStr, notifiedBatches: [] };
+        localStorage.setItem('notificationLog', JSON.stringify(notificationLog));
+    }
 
     // --- Initialization ---
     function init() {
-        // Display Current Date
         const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
         currentDateDisplay.textContent = new Date().toLocaleDateString('en-US', options);
 
         if (googleFormConfig) prefillConfigForm();
+        remindersToggle.checked = appSettings.remindersEnabled;
+
         renderBatches();
+
+        // Start Background Reminder Service
+        requestNotificationPermission();
+        setInterval(checkAttendanceReminders, 60000); // Check every 60 seconds
+        setTimeout(checkAttendanceReminders, 5000); // Initial check after 5 seconds
+    }
+
+    // --- Background Reminder System ---
+
+    function requestNotificationPermission() {
+        if (appSettings.remindersEnabled && "Notification" in window) {
+            if (Notification.permission === "default") {
+                Notification.requestPermission();
+            }
+        }
+    }
+
+    function playReminderSound() {
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContext) return;
+            
+            const ctx = new AudioContext();
+            const osc = ctx.createOscillator();
+            const gainNode = ctx.createGain();
+
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(880, ctx.currentTime); // A5 note
+            osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.1);
+
+            gainNode.gain.setValueAtTime(0.2, ctx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+
+            osc.connect(gainNode);
+            gainNode.connect(ctx.destination);
+
+            osc.start();
+            osc.stop(ctx.currentTime + 0.5);
+        } catch (e) {
+            console.error("Failed to play notification sound", e);
+        }
+    }
+
+    function parseBatchTimeToDate(batchStr) {
+        // Expected batchStr: "2:00 PM"
+        const [time, modifier] = batchStr.split(' ');
+        let [hours, minutes] = time.split(':');
+        hours = parseInt(hours, 10);
+        minutes = parseInt(minutes, 10);
+
+        if (hours === 12) {
+            hours = modifier === 'PM' ? 12 : 0;
+        } else if (modifier === 'PM') {
+            hours += 12;
+        }
+
+        const targetDate = new Date();
+        targetDate.setHours(hours, minutes, 0, 0);
+        return targetDate;
+    }
+
+    function checkAttendanceReminders() {
+        if (!appSettings.remindersEnabled) return;
+        if (!("Notification" in window) || Notification.permission !== "granted") return;
+
+        const uniqueBatches = [...new Set(students.map(s => s.batch))];
+        const now = new Date();
+
+        uniqueBatches.forEach(batch => {
+            // Skip if already notified today
+            if (notificationLog.notifiedBatches.includes(batch)) return;
+
+            const batchTime = parseBatchTimeToDate(batch);
+            
+            // Add 1 hour and 5 minutes (65 mins total offset)
+            const notifyTime = new Date(batchTime.getTime() + (65 * 60000));
+
+            // Check if current time has passed the notification time target
+            if (now >= notifyTime) {
+                // Check if ANY student in this batch has attendance marked today
+                const isAttendanceMarked = attendanceRecords.some(r => r.batch === batch && r.date === todayStr);
+
+                if (!isAttendanceMarked) {
+                    // Fire Notification
+                    new Notification("Attendance Reminder", {
+                        body: `Mark your attendance for ${batch} batch.`,
+                        icon: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='%234f46e5' viewBox='0 0 256 256'><path d='M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216ZM168,128a8,8,0,0,1-8,8H128a8,8,0,0,1-8-8V72a8,8,0,0,1,16,0v48h24A8,8,0,0,1,168,128Z'></path></svg>"
+                    });
+                    
+                    playReminderSound();
+
+                    // Log it so we don't spam the user
+                    notificationLog.notifiedBatches.push(batch);
+                    localStorage.setItem('notificationLog', JSON.stringify(notificationLog));
+                }
+            }
+        });
     }
 
     // --- Modal Logic ---
@@ -45,11 +151,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('open-add-student-btn').addEventListener('click', () => toggleModal(addStudentModal, true));
     document.getElementById('settings-btn').addEventListener('click', () => toggleModal(settingsModal, true));
 
-    // Global Close buttons
     document.querySelectorAll('.close-modal').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            toggleModal(e.target.closest('.modal-overlay'), false);
-        });
+        btn.addEventListener('click', (e) => toggleModal(e.target.closest('.modal-overlay'), false));
     });
 
     document.querySelectorAll('.modal-overlay').forEach(overlay => {
@@ -71,8 +174,14 @@ document.addEventListener('DOMContentLoaded', () => {
             batchKey: document.getElementById('config-batch-key').value.trim()
         };
 
+        appSettings.remindersEnabled = remindersToggle.checked;
+
         localStorage.setItem('googleFormConfig', JSON.stringify(googleFormConfig));
-        showToast('Configuration saved successfully!', 'success');
+        localStorage.setItem('appSettings', JSON.stringify(appSettings));
+
+        if (appSettings.remindersEnabled) requestNotificationPermission();
+
+        showToast('Settings saved successfully!', 'success');
         toggleModal(settingsModal, false);
     });
 
@@ -113,23 +222,16 @@ document.addEventListener('DOMContentLoaded', () => {
     confirmCompleteBtn.addEventListener('click', () => {
         if (!studentIdToDelete) return;
 
-        // 1. Remove student from list
         students = students.filter(s => s.id !== studentIdToDelete);
-        
-        // 2. Remove all attendance history for this student
         attendanceRecords = attendanceRecords.filter(r => r.studentId !== studentIdToDelete);
 
-        // 3. Save clean state to Local Storage
         localStorage.setItem('students', JSON.stringify(students));
         localStorage.setItem('attendance', JSON.stringify(attendanceRecords));
 
         showToast('Student completed and data removed.', 'success');
         
-        // Reset and hide
         studentIdToDelete = null;
         toggleModal(confirmCompleteModal, false);
-        
-        // Re-render instantly - empty batches will auto-hide
         renderBatches(); 
     });
 
@@ -219,7 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
             batchesContainer.appendChild(card);
         });
 
-        // Attach Event Listeners to Radios
+        // Event Listeners for Radios
         document.querySelectorAll('.status-radio').forEach(radio => {
             radio.addEventListener('change', async (e) => {
                 if(e.target.checked) {
@@ -229,7 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Attach Event Listeners to Bulk Actions
+        // Event Listeners for Bulk Actions
         document.querySelectorAll('.bulk-action').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 const { batch, status } = e.target.dataset;
@@ -237,10 +339,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Attach Event Listeners to Complete Course Buttons
+        // Event Listeners for Complete Course
         document.querySelectorAll('.trigger-complete').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                // Read from current target to ensure we hit the button even if icon is clicked
                 studentIdToDelete = e.currentTarget.dataset.id;
                 toggleModal(confirmCompleteModal, true);
             });
