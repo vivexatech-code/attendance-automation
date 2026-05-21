@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Attendance Portal</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    
+    <header class="app-header">
+        <div class="header-content">
+            <div class="logo-area">
+                <i class="ph-fill ph-student"></i>
+                <h1>Attendance Portal</h1>
+            </div>
+            <button id="settings-btn" class="icon-btn" aria-label="Configure Google Form">
+                <i class="ph ph-gear-six"></i>
+            </button>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Add Student Card -->
+        <section class="card">
+            <div class="card-header">
+                <i class="ph ph-user-plus"></i>
+                <h2>Add Student</h2>
+            </div>
+            <p class="card-desc">Register a new student to the database.</p>
+            
+            <form id="add-student-form">
+                <div class="input-group">
+                    <label for="new-student-name">Full Name</label>
+                    <div class="input-wrapper">
+                        <i class="ph ph-user"></i>
+                        <input type="text" id="new-student-name" placeholder="e.g. John Doe" required autocomplete="off">
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label for="new-batch">Batch</label>
+                    <div class="input-wrapper">
+                        <i class="ph ph-books"></i>
+                        <input type="text" id="new-batch" placeholder="e.g. 2024-A" required autocomplete="off">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary">
+                    <i class="ph ph-plus-circle"></i> Add Student
+                </button>
+            </form>
+        </section>
+
+        <!-- Mark Attendance Card -->
+        <section class="card">
+            <div class="card-header">
+                <i class="ph ph-calendar-check"></i>
+                <h2>Mark Attendance</h2>
+            </div>
+            <p class="card-desc">Record daily attendance and sync to Google Form.</p>
+
+            <form id="attendance-form">
+                <div class="input-group">
+                    <label for="student-select">Select Student</label>
+                    <div class="input-wrapper">
+                        <i class="ph ph-users"></i>
+                        <select id="student-select" required>
+                            <option value="" disabled selected>-- Choose a student --</option>
+                            <!-- Options injected via JS -->
+                        </select>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label for="student-batch">Batch</label>
+                    <div class="input-wrapper disabled-wrapper">
+                        <i class="ph ph-tag"></i>
+                        <input type="text" id="student-batch" placeholder="Auto-filled batch" readonly>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label>Attendance Status</label>
+                    <div class="status-options">
+                        <input type="radio" id="status-p" name="attendance-status" value="P" required>
+                        <label for="status-p" class="status-btn p-btn">
+                            <span class="status-letter">P</span> Present
+                        </label>
+
+                        <input type="radio" id="status-a" name="attendance-status" value="A">
+                        <label for="status-a" class="status-btn a-btn">
+                            <span class="status-letter">A</span> Absent
+                        </label>
+
+                        <input type="radio" id="status-o" name="attendance-status" value="O">
+                        <label for="status-o" class="status-btn o-btn">
+                            <span class="status-letter">O</span> Off
+                        </label>
+
+                        <input type="radio" id="status-h" name="attendance-status" value="H">
+                        <label for="status-h" class="status-btn h-btn">
+                            <span class="status-letter">H</span> Holiday
+                        </label>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-success">
+                    <i class="ph ph-paper-plane-tilt"></i> Mark Attendance
+                </button>
+            </form>
+        </section>
+    </main>
+
+    <!-- Google Form Settings Modal -->
+    <div id="settings-modal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <i class="ph-fill ph-google-logo"></i>
+                    <h2>Configure Form Integration</h2>
+                </div>
+                <button id="close-modal-btn" class="icon-btn" aria-label="Close modal">
+                    <i class="ph ph-x"></i>
+                </button>
+            </div>
+            <p class="modal-desc">Link your Google Form to automatically receive attendance entries.</p>
+            
+            <form id="config-form">
+                <div class="input-group">
+                    <label for="config-url">Google Form URL</label>
+                    <div class="input-wrapper">
+                        <i class="ph ph-link"></i>
+                        <input type="url" id="config-url" placeholder="https://docs.google.com/forms/d/e/.../viewform" required>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label for="config-name-key">Student Name Entry Key</label>
+                    <div class="input-wrapper">
+                        <i class="ph ph-key"></i>
+                        <input type="text" id="config-name-key" placeholder="e.g. entry.123456789" required>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label for="config-status-key">Attendance Status Entry Key</label>
+                    <div class="input-wrapper">
+                        <i class="ph ph-key"></i>
+                        <input type="text" id="config-status-key" placeholder="e.g. entry.987654321" required>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label for="config-batch-key">Time/Batch Entry Key</label>
+                    <div class="input-wrapper">
+                        <i class="ph ph-key"></i>
+                        <input type="text" id="config-batch-key" placeholder="e.g. entry.112233445" required>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary">
+                    <i class="ph ph-floppy-disk"></i> Save Configuration
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Notifications Container -->
+    <div id="toast-container"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
