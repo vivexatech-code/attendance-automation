@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let lastStudentIdSeq = parseInt(localStorage.getItem('lastStudentIdSeq') || '0', 10);
     let studentIdToDelete = null; 
     
-    const todayStr = new Date().toLocaleDateString('en-CA'); // e.g. "2026-05-23"
+    const todayStr = new Date().toLocaleDateString('en-CA'); 
 
     // Notification Log
     let notificationLog = JSON.parse(localStorage.getItem('notificationLog')) || { date: todayStr, notifiedBatches: [] };
@@ -58,16 +58,17 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(checkAttendanceReminders, 5000); 
     }
 
-    // --- Student ID Generator System ---
+    // --- STRICT Student ID Generator System ---
     function generateNextId() {
         lastStudentIdSeq++;
         localStorage.setItem('lastStudentIdSeq', lastStudentIdSeq);
+        // Enforce STRICT ST001 format
         return 'ST' + lastStudentIdSeq.toString().padStart(3, '0');
     }
 
-    // Safely bumps the sequence if a higher ID is imported via CSV
+    // Safely bumps the sequence if a higher ID exists or is imported via CSV
     function syncIdSequence(idStr) {
-        if (idStr && idStr.startsWith('ST')) {
+        if (idStr && /^ST\d{3,}$/.test(idStr)) { // strictly matches ST001, ST025, ST1000
             const num = parseInt(idStr.replace('ST', ''), 10);
             if (!isNaN(num) && num > lastStudentIdSeq) {
                 lastStudentIdSeq = num;
@@ -151,7 +152,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         let imported = 0;
-        let errors = 0;
+        let duplicateSkipped = 0;
+        let errorsSkipped = 0;
 
         for (let i = 1; i < lines.length; i++) {
             const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
@@ -160,31 +162,50 @@ document.addEventListener('DOMContentLoaded', () => {
             const batch = (row[batchIdx] || '').replace(/^["']|["']$/g, '').trim();
 
             if (!name || !batch) {
-                errors++;
+                errorsSkipped++;
                 continue;
             }
 
-            let id = idIdx !== -1 ? (row[idIdx] || '').replace(/^["']|["']$/g, '').trim() : '';
-            
-            // Generate safe new ID if missing or already exists in memory
-            if (!id || students.some(s => s.id === id)) {
-                id = generateNextId();
+            let csvId = idIdx !== -1 ? (row[idIdx] || '').replace(/^["']|["']$/g, '').trim() : '';
+            let finalId = '';
+
+            if (csvId) {
+                // Check if the provided ID STRICTLY matches ST001 format
+                if (/^ST\d{3,}$/.test(csvId)) {
+                    
+                    // Check for duplicates
+                    const isDuplicateId = students.some(s => s.id === csvId);
+                    if (isDuplicateId) {
+                        duplicateSkipped++; // Skip entirely, do not overwrite or auto-generate
+                        continue;
+                    }
+
+                    // ID is valid and unique
+                    finalId = csvId;
+                    syncIdSequence(finalId);
+                } else {
+                    // ID format is invalid (e.g., ST1, 001, ABC) -> auto generate proper ID
+                    finalId = generateNextId();
+                }
             } else {
-                syncIdSequence(id); // Safely push local sequence boundary up
+                // No ID provided -> auto generate proper ID
+                finalId = generateNextId();
             }
 
-            students.push({ id, name, batch });
+            students.push({ id: finalId, name, batch });
             imported++;
         }
 
-        if (imported > 0) {
+        if (imported > 0 || duplicateSkipped > 0 || errorsSkipped > 0) {
             localStorage.setItem('students', JSON.stringify(students));
             renderBatches();
-            showToast(`${imported} students imported successfully!`, 'success');
-        }
-
-        if (errors > 0) {
-            setTimeout(() => showToast(`${errors} invalid rows skipped`, 'warning'), 1000);
+            
+            // Build Summary Message
+            let summaryMsg = `${imported} students imported`;
+            if (duplicateSkipped > 0) summaryMsg += `<br>${duplicateSkipped} duplicate IDs skipped`;
+            if (errorsSkipped > 0) summaryMsg += `<br>${errorsSkipped} invalid rows skipped`;
+            
+            showToast(summaryMsg, imported > 0 ? 'success' : 'warning');
         }
     }
 
@@ -315,7 +336,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!nameInput || !batchInput) return showToast('Please fill all fields', 'error');
 
-        // Duplicates are completely allowed now! We just generate a new ID.
+        // Automatically Generate Internal ID
         const newId = generateNextId();
 
         students.push({ id: newId, name: nameInput, batch: batchInput });
@@ -399,6 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const isLocked = !!record;
                 const status = isLocked ? record.status : '';
 
+                // ID remains hidden from UI, tied only to data-id
                 rowsHTML += `
                     <div class="student-row ${isLocked ? 'locked' : ''}" id="row-${student.id}">
                         <div class="student-info">
@@ -476,7 +498,7 @@ document.addEventListener('DOMContentLoaded', () => {
             submitUrl = submitUrl.replace(/\/+$/, '') + '/formResponse'; 
         }
 
-        // Send Student Name (not ID) to Google form
+        // Send Student Name to Google form, NOT ID
         const payloadObj = {};
         payloadObj[googleFormConfig.nameKey] = studentName; 
         payloadObj[googleFormConfig.statusKey] = status;
@@ -487,7 +509,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Save Locally immediately referencing ID
         const record = {
             id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-            studentId, // ID prevents sync conflicts on the same name
+            studentId, 
             studentName,
             batch,
             status,
@@ -577,7 +599,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => {
             toast.classList.add('fade-out');
             toast.addEventListener('animationend', () => toast.remove());
-        }, 3500);
+        }, 3500); // slightly longer timeout to allow multi-line reading
     }
 
     init();
