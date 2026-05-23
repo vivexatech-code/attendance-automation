@@ -18,8 +18,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const importCsvBtn = document.getElementById('import-csv-btn');
     const exportCsvBtn = document.getElementById('export-csv-btn');
     const csvFileInput = document.getElementById('csv-file-input');
-
-    // Settings Inputs
     const remindersToggle = document.getElementById('config-reminders');
 
     // --- State Management ---
@@ -28,9 +26,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let googleFormConfig = JSON.parse(localStorage.getItem('googleFormConfig')) || null;
     let appSettings = JSON.parse(localStorage.getItem('appSettings')) || { remindersEnabled: true };
     
+    // Internal Unique ID Sequence tracking
+    let lastStudentIdSeq = parseInt(localStorage.getItem('lastStudentIdSeq') || '0', 10);
     let studentIdToDelete = null; 
     
-    // Time Strings
     const todayStr = new Date().toLocaleDateString('en-CA'); // e.g. "2026-05-23"
 
     // Notification Log
@@ -48,6 +47,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (googleFormConfig) prefillConfigForm();
         remindersToggle.checked = appSettings.remindersEnabled;
 
+        // Sync sequence with any existing data to ensure we never overwrite/duplicate IDs
+        students.forEach(s => syncIdSequence(s.id));
+
         renderBatches();
 
         // Start Background Reminder Service
@@ -56,31 +58,46 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(checkAttendanceReminders, 5000); 
     }
 
+    // --- Student ID Generator System ---
+    function generateNextId() {
+        lastStudentIdSeq++;
+        localStorage.setItem('lastStudentIdSeq', lastStudentIdSeq);
+        return 'ST' + lastStudentIdSeq.toString().padStart(3, '0');
+    }
+
+    // Safely bumps the sequence if a higher ID is imported via CSV
+    function syncIdSequence(idStr) {
+        if (idStr && idStr.startsWith('ST')) {
+            const num = parseInt(idStr.replace('ST', ''), 10);
+            if (!isNaN(num) && num > lastStudentIdSeq) {
+                lastStudentIdSeq = num;
+                localStorage.setItem('lastStudentIdSeq', lastStudentIdSeq);
+            }
+        }
+    }
+
+
     // --- CSV Import & Export Logic ---
 
     // 1. Export CSV
     exportCsvBtn.addEventListener('click', () => {
         if (students.length === 0) return showToast('No students to export!', 'warning');
-
         showToast('Exporting data...', 'info');
 
-        // Prepare CSV Content
-        let csvContent = "Student Name,Batch\n";
+        // Prepare CSV Content (Format: ID,Student Name,Batch)
+        let csvContent = "ID,Student Name,Batch\n";
         
-        // Sort identically to UI before export
         const sortedExports = [...students].sort((a, b) => {
             if (a.batch === b.batch) return a.name.localeCompare(b.name);
             return a.batch.localeCompare(b.batch);
         });
 
         sortedExports.forEach(student => {
-            // Escape potential quotes and commas
             const safeName = student.name.includes(',') ? `"${student.name}"` : student.name;
             const safeBatch = student.batch.includes(',') ? `"${student.batch}"` : student.batch;
-            csvContent += `${safeName},${safeBatch}\n`;
+            csvContent += `${student.id},${safeName},${safeBatch}\n`;
         });
 
-        // Generate Downloadable Blob
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -88,15 +105,13 @@ document.addEventListener('DOMContentLoaded', () => {
         link.setAttribute("download", `students_${todayStr}.csv`);
         document.body.appendChild(link);
         
-        link.click(); // Trigger download
+        link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
     });
 
     // 2. Import CSV
-    importCsvBtn.addEventListener('click', () => {
-        csvFileInput.click(); // Open file picker
-    });
+    importCsvBtn.addEventListener('click', () => csvFileInput.click());
 
     csvFileInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
@@ -104,15 +119,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (file.type !== "text/csv" && !file.name.endsWith('.csv')) {
             showToast('Please upload a valid .csv file', 'error');
-            csvFileInput.value = ''; // Reset input
+            csvFileInput.value = ''; 
             return;
         }
 
         const reader = new FileReader();
         reader.onload = (event) => {
-            const csvText = event.target.result;
-            processCsvData(csvText);
-            csvFileInput.value = ''; // Reset to allow importing same file again if needed
+            processCsvData(event.target.result);
+            csvFileInput.value = ''; 
         };
         reader.onerror = () => {
             showToast('Error reading the file', 'error');
@@ -124,15 +138,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function processCsvData(csvText) {
-        // Split by newlines, handling both \r\n and \n
         const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== '');
-        
-        if (lines.length < 2) {
-            return showToast('CSV is empty or missing headers', 'error');
-        }
+        if (lines.length < 2) return showToast('CSV is empty or missing headers', 'error');
 
-        // Parse Headers
         const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+        const idIdx = headers.findIndex(h => h === 'id' || h === 'student id');
         const nameIdx = headers.findIndex(h => h.includes('name'));
         const batchIdx = headers.findIndex(h => h.includes('batch'));
 
@@ -141,15 +151,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         let imported = 0;
-        let skipped = 0;
         let errors = 0;
 
-        // Process rows securely
         for (let i = 1; i < lines.length; i++) {
-            // regex splits commas unless inside quotes
             const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
             
-            // Clean quotes and trim spaces
             const name = (row[nameIdx] || '').replace(/^["']|["']$/g, '').trim();
             const batch = (row[batchIdx] || '').replace(/^["']|["']$/g, '').trim();
 
@@ -158,34 +164,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 continue;
             }
 
-            // Check Duplicate against local memory
-            const isDuplicate = students.some(s => s.name.toLowerCase() === name.toLowerCase() && s.batch === batch);
+            let id = idIdx !== -1 ? (row[idIdx] || '').replace(/^["']|["']$/g, '').trim() : '';
             
-            if (isDuplicate) {
-                skipped++;
+            // Generate safe new ID if missing or already exists in memory
+            if (!id || students.some(s => s.id === id)) {
+                id = generateNextId();
             } else {
-                students.push({
-                    id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-                    name: name,
-                    batch: batch
-                });
-                imported++;
+                syncIdSequence(id); // Safely push local sequence boundary up
             }
+
+            students.push({ id, name, batch });
+            imported++;
         }
 
-        // Save State
         if (imported > 0) {
             localStorage.setItem('students', JSON.stringify(students));
             renderBatches();
             showToast(`${imported} students imported successfully!`, 'success');
-        } else if (skipped > 0) {
-            showToast(`No new students added. ${skipped} duplicates skipped.`, 'warning');
         }
 
-        if (errors > 0 || (skipped > 0 && imported > 0)) {
-            setTimeout(() => {
-                showToast(`Skipped: ${skipped} duplicates, ${errors} invalid rows`, 'info');
-            }, 1000);
+        if (errors > 0) {
+            setTimeout(() => showToast(`${errors} invalid rows skipped`, 'warning'), 1000);
         }
     }
 
@@ -193,9 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Background Reminder System ---
     function requestNotificationPermission() {
         if (appSettings.remindersEnabled && "Notification" in window) {
-            if (Notification.permission === "default") {
-                Notification.requestPermission();
-            }
+            if (Notification.permission === "default") Notification.requestPermission();
         }
     }
 
@@ -235,24 +232,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function checkAttendanceReminders() {
-        if (!appSettings.remindersEnabled) return;
-        if (!("Notification" in window) || Notification.permission !== "granted") return;
+        if (!appSettings.remindersEnabled || !("Notification" in window) || Notification.permission !== "granted") return;
 
         const uniqueBatches = [...new Set(students.map(s => s.batch))];
         const now = new Date();
 
         uniqueBatches.forEach(batch => {
             if (notificationLog.notifiedBatches.includes(batch)) return;
+            
             const batchTime = parseBatchTimeToDate(batch);
-            const notifyTime = new Date(batchTime.getTime() + (65 * 60000));
+            const notifyTime = new Date(batchTime.getTime() + (65 * 60000)); // +1 hr 5 min
 
             if (now >= notifyTime) {
                 const isAttendanceMarked = attendanceRecords.some(r => r.batch === batch && r.date === todayStr);
 
                 if (!isAttendanceMarked) {
-                    new Notification("Attendance Reminder", {
-                        body: `Mark your attendance for ${batch} batch.`
-                    });
+                    new Notification("Attendance Reminder", { body: `Mark your attendance for ${batch} batch.` });
                     playReminderSound();
                     notificationLog.notifiedBatches.push(batch);
                     localStorage.setItem('notificationLog', JSON.stringify(notificationLog));
@@ -320,10 +315,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!nameInput || !batchInput) return showToast('Please fill all fields', 'error');
 
-        const isDuplicate = students.some(s => s.name.toLowerCase() === nameInput.toLowerCase() && s.batch === batchInput);
-        if (isDuplicate) return showToast('Student already exists in this batch', 'error');
+        // Duplicates are completely allowed now! We just generate a new ID.
+        const newId = generateNextId();
 
-        students.push({ id: Date.now().toString(), name: nameInput, batch: batchInput });
+        students.push({ id: newId, name: nameInput, batch: batchInput });
         localStorage.setItem('students', JSON.stringify(students));
 
         showToast('Student added successfully!', 'success');
@@ -340,6 +335,7 @@ document.addEventListener('DOMContentLoaded', () => {
     confirmCompleteBtn.addEventListener('click', () => {
         if (!studentIdToDelete) return;
 
+        // All internal tracking strictly uses student.id
         students = students.filter(s => s.id !== studentIdToDelete);
         attendanceRecords = attendanceRecords.filter(r => r.studentId !== studentIdToDelete);
 
@@ -480,16 +476,18 @@ document.addEventListener('DOMContentLoaded', () => {
             submitUrl = submitUrl.replace(/\/+$/, '') + '/formResponse'; 
         }
 
+        // Send Student Name (not ID) to Google form
         const payloadObj = {};
-        payloadObj[googleFormConfig.nameKey] = studentName;
+        payloadObj[googleFormConfig.nameKey] = studentName; 
         payloadObj[googleFormConfig.statusKey] = status;
         payloadObj[googleFormConfig.batchKey] = batch;
 
         const payloadParams = new URLSearchParams(payloadObj);
 
+        // Save Locally immediately referencing ID
         const record = {
             id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-            studentId,
+            studentId, // ID prevents sync conflicts on the same name
             studentName,
             batch,
             status,
