@@ -25,8 +25,15 @@
                 <h1>Attendance Portal</h1>
             </div>
             <div class="header-actions">
-                <button id="open-add-student-btn" class="btn btn-outline" aria-label="Add Student">
-                    <i class="ph ph-user-plus"></i> <span class="hide-mobile">Add Student</span>
+                <!-- CSV Import/Export Buttons -->
+                <button id="import-csv-btn" class="btn btn-outline" aria-label="Import CSV">
+                    <i class="ph ph-upload-simple"></i> <span class="hide-mobile">Import</span>
+                </button>
+                <button id="export-csv-btn" class="btn btn-outline" aria-label="Export CSV">
+                    <i class="ph ph-download-simple"></i> <span class="hide-mobile">Export</span>
+                </button>
+                <button id="open-add-student-btn" class="btn btn-primary-outline" aria-label="Add Student">
+                    <i class="ph ph-user-plus"></i> <span class="hide-mobile">Add</span>
                 </button>
                 <button id="settings-btn" class="icon-btn" aria-label="Configure Settings">
                     <i class="ph ph-gear-six"></i>
@@ -34,6 +41,9 @@
             </div>
         </div>
     </header>
+
+    <!-- Hidden CSV File Input -->
+    <input type="file" id="csv-file-input" accept=".csv" style="display: none;">
 
     <main class="container">
         
@@ -129,8 +139,6 @@
             </div>
             
             <form id="config-form">
-                
-                <!-- Reminders Toggle -->
                 <div class="input-group toggle-group" style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border-color);">
                     <div>
                         <label style="font-size: 1rem; color: var(--text-main);">Attendance Reminders</label>

@@ -46,6 +46,10 @@ body {
     flex-direction: column;
 }
 
+:-webkit-scrollbar {
+    display: none;
+}
+
 /* --- Header --- */
 .app-header {
     background-color: var(--card-bg);
@@ -482,4 +486,27 @@ input:checked + .slider:before {
     font-size: 0.8rem;
     color: var(--text-muted);
     margin-top: 0.25rem;
+}
+
+/* Update header actions gap slightly for better mobile fit */
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem; /* Reduced from 1rem to fit new buttons */
+}
+
+/* Primary-outline styling for the Add button */
+.btn-primary-outline {
+    background-color: var(--primary);
+    color: white;
+    border: 1px solid var(--primary);
+}
+.btn-primary-outline:hover {
+    background-color: var(--primary-hover);
+}
+
+@media (max-width: 640px) {
+    .btn { padding: 0.6rem; }
+    .btn i { margin: 0; }
+    .header-actions { gap: 0.25rem; }
 }

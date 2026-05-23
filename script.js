@@ -11,9 +11,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const settingsModal = document.getElementById('settings-modal');
     const confirmCompleteModal = document.getElementById('confirm-complete-modal');
     const confirmCompleteBtn = document.getElementById('confirm-complete-btn');
-    
     const addStudentForm = document.getElementById('add-student-form');
     const configForm = document.getElementById('config-form');
+    
+    // Top action buttons
+    const importCsvBtn = document.getElementById('import-csv-btn');
+    const exportCsvBtn = document.getElementById('export-csv-btn');
+    const csvFileInput = document.getElementById('csv-file-input');
 
     // Settings Inputs
     const remindersToggle = document.getElementById('config-reminders');
@@ -25,9 +29,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let appSettings = JSON.parse(localStorage.getItem('appSettings')) || { remindersEnabled: true };
     
     let studentIdToDelete = null; 
-    const todayStr = new Date().toLocaleDateString('en-CA');
+    
+    // Time Strings
+    const todayStr = new Date().toLocaleDateString('en-CA'); // e.g. "2026-05-23"
 
-    // Notification Log (resets automatically for the new day)
+    // Notification Log
     let notificationLog = JSON.parse(localStorage.getItem('notificationLog')) || { date: todayStr, notifiedBatches: [] };
     if (notificationLog.date !== todayStr) {
         notificationLog = { date: todayStr, notifiedBatches: [] };
@@ -46,12 +52,145 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Start Background Reminder Service
         requestNotificationPermission();
-        setInterval(checkAttendanceReminders, 60000); // Check every 60 seconds
-        setTimeout(checkAttendanceReminders, 5000); // Initial check after 5 seconds
+        setInterval(checkAttendanceReminders, 60000); 
+        setTimeout(checkAttendanceReminders, 5000); 
     }
 
-    // --- Background Reminder System ---
+    // --- CSV Import & Export Logic ---
 
+    // 1. Export CSV
+    exportCsvBtn.addEventListener('click', () => {
+        if (students.length === 0) return showToast('No students to export!', 'warning');
+
+        showToast('Exporting data...', 'info');
+
+        // Prepare CSV Content
+        let csvContent = "Student Name,Batch\n";
+        
+        // Sort identically to UI before export
+        const sortedExports = [...students].sort((a, b) => {
+            if (a.batch === b.batch) return a.name.localeCompare(b.name);
+            return a.batch.localeCompare(b.batch);
+        });
+
+        sortedExports.forEach(student => {
+            // Escape potential quotes and commas
+            const safeName = student.name.includes(',') ? `"${student.name}"` : student.name;
+            const safeBatch = student.batch.includes(',') ? `"${student.batch}"` : student.batch;
+            csvContent += `${safeName},${safeBatch}\n`;
+        });
+
+        // Generate Downloadable Blob
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `students_${todayStr}.csv`);
+        document.body.appendChild(link);
+        
+        link.click(); // Trigger download
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    });
+
+    // 2. Import CSV
+    importCsvBtn.addEventListener('click', () => {
+        csvFileInput.click(); // Open file picker
+    });
+
+    csvFileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (file.type !== "text/csv" && !file.name.endsWith('.csv')) {
+            showToast('Please upload a valid .csv file', 'error');
+            csvFileInput.value = ''; // Reset input
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const csvText = event.target.result;
+            processCsvData(csvText);
+            csvFileInput.value = ''; // Reset to allow importing same file again if needed
+        };
+        reader.onerror = () => {
+            showToast('Error reading the file', 'error');
+            csvFileInput.value = '';
+        };
+
+        reader.readAsText(file);
+        showToast('Processing file...', 'info');
+    });
+
+    function processCsvData(csvText) {
+        // Split by newlines, handling both \r\n and \n
+        const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== '');
+        
+        if (lines.length < 2) {
+            return showToast('CSV is empty or missing headers', 'error');
+        }
+
+        // Parse Headers
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+        const nameIdx = headers.findIndex(h => h.includes('name'));
+        const batchIdx = headers.findIndex(h => h.includes('batch'));
+
+        if (nameIdx === -1 || batchIdx === -1) {
+            return showToast('Invalid format. Headers must include "Student Name" and "Batch"', 'error');
+        }
+
+        let imported = 0;
+        let skipped = 0;
+        let errors = 0;
+
+        // Process rows securely
+        for (let i = 1; i < lines.length; i++) {
+            // regex splits commas unless inside quotes
+            const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+            
+            // Clean quotes and trim spaces
+            const name = (row[nameIdx] || '').replace(/^["']|["']$/g, '').trim();
+            const batch = (row[batchIdx] || '').replace(/^["']|["']$/g, '').trim();
+
+            if (!name || !batch) {
+                errors++;
+                continue;
+            }
+
+            // Check Duplicate against local memory
+            const isDuplicate = students.some(s => s.name.toLowerCase() === name.toLowerCase() && s.batch === batch);
+            
+            if (isDuplicate) {
+                skipped++;
+            } else {
+                students.push({
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                    name: name,
+                    batch: batch
+                });
+                imported++;
+            }
+        }
+
+        // Save State
+        if (imported > 0) {
+            localStorage.setItem('students', JSON.stringify(students));
+            renderBatches();
+            showToast(`${imported} students imported successfully!`, 'success');
+        } else if (skipped > 0) {
+            showToast(`No new students added. ${skipped} duplicates skipped.`, 'warning');
+        }
+
+        if (errors > 0 || (skipped > 0 && imported > 0)) {
+            setTimeout(() => {
+                showToast(`Skipped: ${skipped} duplicates, ${errors} invalid rows`, 'info');
+            }, 1000);
+        }
+    }
+
+
+    // --- Background Reminder System ---
     function requestNotificationPermission() {
         if (appSettings.remindersEnabled && "Notification" in window) {
             if (Notification.permission === "default") {
@@ -64,40 +203,31 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const AudioContext = window.AudioContext || window.webkitAudioContext;
             if (!AudioContext) return;
-            
             const ctx = new AudioContext();
             const osc = ctx.createOscillator();
             const gainNode = ctx.createGain();
 
             osc.type = 'sine';
-            osc.frequency.setValueAtTime(880, ctx.currentTime); // A5 note
+            osc.frequency.setValueAtTime(880, ctx.currentTime); 
             osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.1);
-
             gainNode.gain.setValueAtTime(0.2, ctx.currentTime);
             gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
 
             osc.connect(gainNode);
             gainNode.connect(ctx.destination);
-
             osc.start();
             osc.stop(ctx.currentTime + 0.5);
-        } catch (e) {
-            console.error("Failed to play notification sound", e);
-        }
+        } catch (e) { console.error("Sound failed", e); }
     }
 
     function parseBatchTimeToDate(batchStr) {
-        // Expected batchStr: "2:00 PM"
         const [time, modifier] = batchStr.split(' ');
         let [hours, minutes] = time.split(':');
         hours = parseInt(hours, 10);
         minutes = parseInt(minutes, 10);
 
-        if (hours === 12) {
-            hours = modifier === 'PM' ? 12 : 0;
-        } else if (modifier === 'PM') {
-            hours += 12;
-        }
+        if (hours === 12) hours = modifier === 'PM' ? 12 : 0;
+        else if (modifier === 'PM') hours += 12;
 
         const targetDate = new Date();
         targetDate.setHours(hours, minutes, 0, 0);
@@ -112,29 +242,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const now = new Date();
 
         uniqueBatches.forEach(batch => {
-            // Skip if already notified today
             if (notificationLog.notifiedBatches.includes(batch)) return;
-
             const batchTime = parseBatchTimeToDate(batch);
-            
-            // Add 1 hour and 5 minutes (65 mins total offset)
             const notifyTime = new Date(batchTime.getTime() + (65 * 60000));
 
-            // Check if current time has passed the notification time target
             if (now >= notifyTime) {
-                // Check if ANY student in this batch has attendance marked today
                 const isAttendanceMarked = attendanceRecords.some(r => r.batch === batch && r.date === todayStr);
 
                 if (!isAttendanceMarked) {
-                    // Fire Notification
                     new Notification("Attendance Reminder", {
-                        body: `Mark your attendance for ${batch} batch.`,
-                        icon: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='%234f46e5' viewBox='0 0 256 256'><path d='M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216ZM168,128a8,8,0,0,1-8,8H128a8,8,0,0,1-8-8V72a8,8,0,0,1,16,0v48h24A8,8,0,0,1,168,128Z'></path></svg>"
+                        body: `Mark your attendance for ${batch} batch.`
                     });
-                    
                     playReminderSound();
-
-                    // Log it so we don't spam the user
                     notificationLog.notifiedBatches.push(batch);
                     localStorage.setItem('notificationLog', JSON.stringify(notificationLog));
                 }
@@ -193,7 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('config-batch-key').value = googleFormConfig.batchKey || '';
     }
 
-    // --- Add Student Logic ---
+    // --- Add Single Student Logic ---
     addStudentForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const nameInput = document.getElementById('new-student-name').value.trim();
@@ -213,7 +332,6 @@ document.addEventListener('DOMContentLoaded', () => {
         renderBatches();
     });
 
-    // --- Core Attendance Check ---
     function getTodayRecord(studentId) {
         return attendanceRecords.find(r => r.studentId === studentId && r.date === todayStr);
     }
@@ -245,7 +363,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="empty-state card">
                     <i class="ph ph-users"></i>
                     <h3>No students found</h3>
-                    <p>Add students to start taking attendance.</p>
+                    <p>Add students or Import CSV to start taking attendance.</p>
                 </div>
             `;
             return;
@@ -321,7 +439,6 @@ document.addEventListener('DOMContentLoaded', () => {
             batchesContainer.appendChild(card);
         });
 
-        // Event Listeners for Radios
         document.querySelectorAll('.status-radio').forEach(radio => {
             radio.addEventListener('change', async (e) => {
                 if(e.target.checked) {
@@ -331,7 +448,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Event Listeners for Bulk Actions
         document.querySelectorAll('.bulk-action').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 const { batch, status } = e.target.dataset;
@@ -339,7 +455,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Event Listeners for Complete Course
         document.querySelectorAll('.trigger-complete').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 studentIdToDelete = e.currentTarget.dataset.id;
@@ -372,7 +487,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const payloadParams = new URLSearchParams(payloadObj);
 
-        // Save Locally immediately
         const record = {
             id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
             studentId,
@@ -385,7 +499,6 @@ document.addEventListener('DOMContentLoaded', () => {
         attendanceRecords.push(record);
         localStorage.setItem('attendance', JSON.stringify(attendanceRecords));
 
-        // Lock UI Row visually immediately
         const row = document.getElementById(`row-${studentId}`);
         if(row) {
             row.classList.add('locked');
@@ -394,14 +507,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if(icon) icon.style.color = 'var(--success)';
         }
 
-        // Background Submit to Google Form
         try {
             await fetch(submitUrl, {
                 method: 'POST',
                 mode: 'no-cors',
-                headers: { 
-                    'Content-Type': 'application/x-www-form-urlencoded' 
-                },
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: payloadParams.toString()
             });
             
@@ -414,15 +524,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Bulk Action Logic ---
     async function processBulkAction(batch, status) {
         if (!googleFormConfig || !googleFormConfig.url) return showToast('Please configure Google Form first', 'error');
 
         const unmarkedStudents = students.filter(s => s.batch === batch && !getTodayRecord(s.id));
-        
-        if(unmarkedStudents.length === 0) {
-            return showToast(`All students in ${batch} are already marked.`, 'info');
-        }
+        if(unmarkedStudents.length === 0) return showToast(`All students in ${batch} are already marked.`, 'info');
 
         showToast(`Submitting ${unmarkedStudents.length} records...`, 'info');
 
@@ -435,15 +541,11 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast(`${batch} attendance submitted successfully`, 'success');
     }
 
-    // --- Final Submit (Mark Remaining Absent) ---
     finalSubmitBtn.addEventListener('click', async () => {
         if (!googleFormConfig || !googleFormConfig.url) return showToast('Please configure Google Form first', 'error');
 
         const unmarkedStudents = students.filter(s => !getTodayRecord(s.id));
-
-        if(unmarkedStudents.length === 0) {
-            return showToast('Attendance is already complete for today!', 'success');
-        }
+        if(unmarkedStudents.length === 0) return showToast('Attendance is already complete for today!', 'success');
 
         const confirmMsg = `Are you sure? This will mark ${unmarkedStudents.length} remaining student(s) as Absent.`;
         if(!confirm(confirmMsg)) return;
@@ -463,7 +565,6 @@ document.addEventListener('DOMContentLoaded', () => {
         finalSubmitBtn.innerHTML = '<i class="ph ph-check-circle"></i> Done for Today';
     });
 
-    // --- Toast Notification System ---
     function showToast(message, type = 'success') {
         const toast = document.createElement('div');
         toast.className = `toast ${type}`;
@@ -481,6 +582,5 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 3500);
     }
 
-    // Start App
     init();
 });
